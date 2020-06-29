@@ -1,0 +1,32 @@
+DOCKER-
+docker build --tag jwt-api-test .
+docker run --env-file=env_file -p 80:8080 jwt-api-test
+
+EKS- Create Cluster
+eksctl create cluster --name simple-jwt-api
+
+
+
+AWS CLI - 
+-- SET kube config
+aws eks --region us-east-2 update-kubeconfig --name simple-jwt-api
+-- SET AWS AIM
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+TRUST="{ \"Version\": \"2012-10-17\", \"Statement\": [ { \"Effect\": \"Allow\", \"Principal\": { \"AWS\": \"arn:aws:iam::${ACCOUNT_ID}:root\" }, \"Action\": \"sts:AssumeRole\" } ] }"
+
+aws iam create-role --role-name UdacityFlaskDeployCBKubectlRole --assume-role-policy-document "$TRUST" --output text --query 'Role.Arn'
+-- This next step did not work in windows so I had to manually add a new file in the root /tmp/iam-role-policy
+echo '{ "Version": "2012-10-17", "Statement": [ { "Effect": "Allow", "Action": [ "eks:Describe*", "ssm:GetParameters" ], "Resource": "*" } ] }' > '/tmp/iam-role-policy'
+
+aws iam put-role-policy --role-name UdacityFlaskDeployCBKubectlRole --policy-name eks-describe --policy-document file:///tmp/iam-role-policy
+
+kubectl get -n kube-system configmap/aws-auth -o yaml > /tmp/aws-auth-patch.yml
+
+PATCH is not working in windows
+kubectl patch configmap/aws-auth -n kube-system --patch "$(cat /tmp/aws-auth-patch.yml)"
+USE Below-
+Instead "edit" the config instead of patching it:
+kubectl edit -n kube-system configmap/aws-auth
+What this will do is open up your configuration in a default editor (on Windows it will likely be Notepad). Paste in the new role for the build tool and format it properly spaces (can check YAML formatting by copy/pasting entire file contents into http://www.yamllint.com/). Then save the file. When you close it, kubectl will apply the changes.You can confirm the changes went through by running kubectl get again, but this time I dropped the part that writes it out to a file (just print to terminal) and you should see your new role added.
+kubectl get -n kube-system configmap/aws-auth -o yaml
